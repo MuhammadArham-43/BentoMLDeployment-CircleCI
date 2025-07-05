@@ -1,0 +1,54 @@
+version: 2.1
+
+executors:
+  python-docker:
+    docker:
+      - image: cimg/python:3.10
+
+jobs:
+  test:
+    executor: python-docker
+    steps:
+      - checkout
+      - run: python -m pip install --upgrade pip
+      - run: pip install -r requirements.txt
+      - run: pytest tests/
+
+  build_bento:
+    executor: python-docker
+    steps:
+      - checkout
+      - run: python -m pip install --upgrade pip
+      - run: pip install -r requirements.txt
+      - run: bentoml build
+
+  dockerize_and_push:
+    docker:
+      - image: cimg/base:stable
+    steps:
+      - checkout
+      - setup_remote_docker
+      - run:
+          name: Login to Docker Hub
+          command: |
+            echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
+      - run:
+          name: Build Docker image
+          command: |
+            bentoml containerize llm-app:latest -t $DOCKER_USERNAME/llm-app:latest
+      - run:
+          name: Push Docker image
+          command: |
+            docker push $DOCKER_USERNAME/llm-app:latest
+
+workflows:
+  version: 2
+  test_build_deploy:
+    jobs:
+      - test
+      - build_bento:
+          requires:
+            - test
+      - dockerize_and_push:
+          requires:
+            - build_bento
